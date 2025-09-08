@@ -1,0 +1,447 @@
+-- SELECT *
+-- FROM `zippy-genre-470802-a3.sqlproject.amazonproject` 
+-- LIMIT 1000
+
+--<추천시스템>
+--1. "파워리뷰어의 선택" 리뷰를 많이 남긴 사용자(파워리뷰어)가 리뷰한 상품 중에서, 파워 리뷰어의 참여도가 높은 상품을 추천
+--2. "욕해도 사게되는" 평점은 낮지만 리뷰나 판매는 많은 상품을 알아보자
+--3. "시즌 추천템" 계절 키워드와 매칭하여 상품 추천
+--4. "뉴비를 위한" 신규회원을 위해 첫 구매용 입문 상품 추천 (저렴한 가격+높은 만족도)
+--5. "매니아층 확실한" 리뷰는 적지만 평점은 만점에 가까운 상품을 알아보자
+
+
+--##################################################################################################################추천시스템1.
+-- "파워리뷰어의 선택", 리뷰를 많이 남긴 사용자(파워리뷰어)가 리뷰한 상품 중에서, 파워 리뷰어의 참여도가 높은 상품을 추천합니다.
+-- SELECT
+--   product_id,
+--   product_name,
+--   TRIM(u) AS uid
+-- FROM `zippy-genre-470802-a3.sqlproject.amazonproject`,
+-- UNNEST(SPLIT(IFNULL(user_id, ''), ',')) AS u
+-- WHERE user_id IS NOT NULL AND user_id <> ''
+-- LIMIT 50;
+
+-- WITH user_product AS (
+--   SELECT
+--     TRIM(u) AS uid,
+--     product_id
+--   FROM`zippy-genre-470802-a3.sqlproject.amazonproject`,
+--   UNNEST(SPLIT(IFNULL(user_id, ''), ',')) AS u
+--   WHERE user_id IS NOT NULL AND user_id <> ''
+-- )
+-- SELECT
+--   uid,
+--   COUNT(*) AS review_cnt
+-- FROM user_product
+-- GROUP BY uid
+-- ORDER BY review_cnt DESC
+-- LIMIT 50;
+
+-- --
+
+-- WITH user_product AS (
+--   SELECT
+--     TRIM(u) AS uid,
+--     product_id
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`,
+--   UNNEST(SPLIT(IFNULL(user_id, ''), ',')) AS u
+--   WHERE user_id IS NOT NULL AND user_id <> ''
+-- ),
+-- reviewer_activity AS (
+--   SELECT uid, COUNT(*) AS review_cnt
+--   FROM user_product
+--   GROUP BY uid
+-- )
+-- SELECT uid
+-- FROM reviewer_activity
+-- WHERE review_cnt >= 10
+-- ORDER BY review_cnt DESC
+-- LIMIT 50;
+
+--
+
+-- WITH user_product AS (
+--   SELECT
+--     TRIM(u) AS uid,
+--     product_id,
+--     product_name
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`,
+--   UNNEST(SPLIT(IFNULL(user_id, ''), ',')) AS u
+--   WHERE user_id IS NOT NULL AND user_id <> ''
+--     AND TRIM(u) <> ''
+-- ),
+-- reviewer_activity AS (
+--   SELECT uid, COUNT(*) AS review_cnt
+--   FROM user_product
+--   GROUP BY uid
+-- ),
+-- power_reviewers AS (
+--   SELECT uid
+--   FROM reviewer_activity
+--   WHERE review_cnt >= 10  
+-- )
+-- SELECT
+--   up.product_id,
+--   ANY_VALUE(up.product_name) AS product_name,
+--   COUNTIF(up.uid IN (SELECT uid FROM power_reviewers)) AS power_reviews_on_product
+-- FROM user_product up
+-- GROUP BY up.product_id
+-- ORDER BY power_reviews_on_product DESC
+-- LIMIT 50;
+
+--총 쿼리. "파워리뷰어의 선택" 리뷰를 많이 남긴 사용자(파워리뷰어)가 리뷰한 상품 중에서, 파워 리뷰어의 참여도가 높은 상품을 추천
+-- WITH user_product AS (
+--   SELECT
+--     TRIM(u) AS uid,
+--     product_id,
+--     product_name
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`,
+--   UNNEST(SPLIT(IFNULL(user_id, ''), ',')) AS u
+--   WHERE user_id IS NOT NULL AND user_id <> ''
+--     AND TRIM(u) <> ''                                  --콤마로 붙어있는 애들 뜯어서 테이블 생
+-- ),
+-- reviewer_activity AS (
+--   SELECT uid, COUNT(*) AS review_cnt                  --사용자별 리뷰횟수 카운트
+--   FROM user_product
+--   GROUP BY uid
+-- ),
+-- power_reviewers AS (
+--   SELECT uid
+--   FROM reviewer_activity
+--   WHERE review_cnt >= 10   
+-- ),
+-- product_stats AS (                            --상품별 파워리뷰어 
+--   SELECT
+--     up.product_id,
+--     ANY_VALUE(up.product_name) AS product_name,
+--     COUNTIF(up.uid IN (SELECT uid FROM power_reviewers)) AS power_reviews_on_product,
+
+   
+--     SAFE_CAST(
+--       REGEXP_REPLACE(
+--         CAST(ANY_VALUE(p.rating) AS STRING),       
+--         r'[^0-9.]',                                
+--         ''
+--       ) AS FLOAT64                                 
+--     ) AS rating_num,                                         --평점숫자, 리뷰수 숫자화
+
+    
+--     SAFE_CAST(
+--       REGEXP_REPLACE(
+--         CAST(ANY_VALUE(p.rating_count) AS STRING), 
+--         r'[^0-9]',                                 
+--         ''
+--       ) AS INT64                                   
+--     ) AS rc
+
+--   FROM user_product up
+--   JOIN `zippy-genre-470802-a3.sqlproject.amazonproject` p
+--     ON up.product_id = p.product_id
+--   GROUP BY up.product_id
+-- )
+-- SELECT                                                     --파워리뷰어 많은 순 --> 평점 높은순 --> 리뷰 많은 순 정렬
+--   product_id,
+--   product_name,
+--   power_reviews_on_product,
+--   rating_num AS rating,
+--   rc AS rating_count
+-- FROM product_stats
+-- WHERE power_reviews_on_product > 0
+-- ORDER BY power_reviews_on_product DESC, rating DESC, rating_count DESC
+-- LIMIT 50;
+
+
+--##################################################################################################################추천시스템2
+-- "욕해도 사게되는" 평점은 낮지만 리뷰나 판매는 많은 상품을 알아보자
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS discounted_price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT *                                               --문자열인애들 숫자로 정규화
+-- FROM cleaned
+-- WHERE rating_num IS NOT NULL AND rc IS NOT NULL
+-- ORDER BY rc DESC
+-- LIMIT 20;
+
+
+-- --
+-- WITH cleaned AS (
+--   SELECT SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   WHERE rating_count IS NOT NULL
+-- )
+-- SELECT
+--   APPROX_QUANTILES(rc, 20)[OFFSET(16)] AS rc_p80,
+--   APPROX_QUANTILES(rc, 20)[OFFSET(18)] AS rc_p90,
+--   APPROX_QUANTILES(rc, 20)[OFFSET(19)] AS rc_p95,
+--   GREATEST(LEAST(APPROX_QUANTILES(rc, 20)[OFFSET(16)], 5000), 500) AS rc_cut
+-- FROM cleaned;
+
+
+-- --
+-- WITH cleaned AS (
+--   SELECT
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   WHERE rating_count IS NOT NULL
+-- ),
+-- cutoff AS (
+--   SELECT
+--     -- p80 = OFFSET 16  (0..20)
+--     APPROX_QUANTILES(rc, 20)[OFFSET(16)] AS rc_p80
+--   FROM cleaned
+-- )
+-- SELECT
+--   COUNT(*) AS candidate_rows,
+--   (SELECT rc_p80 FROM cutoff) AS rc_p80_used,
+--   GREATEST(LEAST((SELECT rc_p80 FROM cutoff), 5000), 500) AS rc_cut -- 500~5000로 캡
+-- FROM cleaned
+-- WHERE rating_num < 3.5
+--   AND rc >= GREATEST(LEAST((SELECT rc_p80 FROM cutoff), 5000), 500);
+
+-- --후보 미리보기
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS discounted_price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   WHERE rating_count IS NOT NULL
+-- ),
+-- cutoff AS (
+--   SELECT APPROX_QUANTILES(rc, 20)[OFFSET(16)] AS rc_p80
+--   FROM cleaned
+-- ),
+-- params AS (
+--   SELECT GREATEST(LEAST((SELECT rc_p80 FROM cutoff), 5000), 500) AS rc_cut
+-- )
+-- SELECT
+--   c.product_id,
+--   c.product_name,
+--   c.rating_num,
+--   c.rc,
+--   c.discounted_price_num,
+--   (SELECT rc_p80 FROM cutoff) AS rc_p80_used,
+--   (SELECT rc_cut FROM params) AS rc_cut_used
+-- FROM cleaned c
+-- WHERE c.rating_num < 3.5
+--   AND c.rc >= (SELECT rc_cut FROM params)
+-- ORDER BY c.rc DESC
+-- LIMIT 20;
+
+-- --최종 역설 점수
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS discounted_price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   WHERE rating_count IS NOT NULL
+-- ),
+-- cutoff AS (
+--   -- p80 사용
+--   SELECT APPROX_QUANTILES(rc, 20)[OFFSET(16)] AS rc_p80
+--   FROM cleaned
+-- ),
+-- params AS (
+--   -- 최종 컷: 500 ~ 5000 범위로 캡
+--   SELECT GREATEST(LEAST((SELECT rc_p80 FROM cutoff), 5000), 500) AS rc_cut
+-- ),
+-- picked AS (
+--   SELECT
+--     c.product_id,
+--     c.product_name,
+--     c.rating_num,
+--     c.rc,
+--     c.discounted_price_num,
+--     -- 역설 점수
+--     c.rc * (5.0 - c.rating_num) AS paradox_score
+--   FROM cleaned c
+--   WHERE c.rating_num < 3.5
+--     AND c.rc >= (SELECT rc_cut FROM params)
+-- )
+-- SELECT
+--   product_id,
+--   product_name,
+--   rating_num AS rating,
+--   rc AS rating_count,
+--   discounted_price_num AS discounted_price,
+--   paradox_score
+-- FROM picked
+-- ORDER BY paradox_score DESC, rc DESC, discounted_price ASC  
+-- LIMIT 10;
+
+--2번테마 최종 쿼리("욕해도 사게되는" 평점은 낮지만 리뷰나 판매는 많은 상품을 알아보자)
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS discounted_price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   WHERE rating_count IS NOT NULL
+-- ),
+-- cutoff AS (
+--   -- p80 사용
+--   SELECT APPROX_QUANTILES(rc, 20)[OFFSET(16)] AS rc_p80
+--   FROM cleaned
+-- ),
+-- params AS (
+--   -- 최종 컷: 500 ~ 5000 범위로 캡
+--   SELECT GREATEST(LEAST((SELECT rc_p80 FROM cutoff), 5000), 500) AS rc_cut
+-- ),
+-- picked AS (
+--   SELECT
+--     c.product_id,
+--     c.product_name,
+--     c.rating_num,
+--     c.rc,
+--     c.discounted_price_num,
+--     -- 역설 점수
+--     c.rc * (5.0 - c.rating_num) AS paradox_score
+--   FROM cleaned c
+--   WHERE c.rating_num < 3.5
+--     AND c.rc >= (SELECT rc_cut FROM params)
+-- )
+-- SELECT
+--   product_id,
+--   product_name,
+--   rating_num AS rating,
+--   rc AS rating_count,
+--   discounted_price_num AS discounted_price,
+--   paradox_score
+-- FROM picked
+-- ORDER BY paradox_score DESC, rc DESC, discounted_price ASC   
+-- LIMIT 10;
+
+
+--##################################################################################################################추천시스템3
+-- "시즌 추천템" 계절 키워드와 매칭하여 상품 추천 (겨울 관련 키워드)
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     LOWER(CONCAT(IFNULL(category,''), ' ', IFNULL(about_product,''))) AS txt,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64)  AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT *
+-- FROM cleaned
+-- LIMIT 20;
+
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id, product_name, txt,
+--     rating_num, rc, price_num
+--   FROM (
+--     SELECT
+--       product_id,
+--       product_name,
+--       LOWER(CONCAT(IFNULL(category,''), ' ', IFNULL(about_product,''))) AS txt,
+--       SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING), r'[^0-9.]', '') AS FLOAT64)  AS rating_num,
+--       SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING), r'[^0-9]', '') AS INT64) AS rc,
+--       SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS price_num
+--     FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+--   )
+-- )
+-- SELECT product_id, product_name, rating_num, rc, price_num
+-- FROM cleaned
+-- WHERE REGEXP_CONTAINS(
+--   txt,
+--   r'(winter|heater|space heater|thermal|warm|warming|blanket|glove|gloves|jacket|hoodie|fleece|insulat(?:ed|ion))'
+-- )
+-- ORDER BY rc DESC
+-- LIMIT 20;
+
+--##################################################################################################################추천시스템4
+-- "뉴비를 위한" 신규회원을 위해 첫 구매용 입문 상품 추천 (저렴한 가격+높은 만족도)
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS price_num,   -- ₹/콤마 제거
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING),           r'[^0-9.]', '') AS FLOAT64) AS rating_num,  -- 평점 숫자
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING),     r'[^0-9]',  '') AS INT64)   AS rc           -- 리뷰수 숫자
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT *
+-- FROM cleaned
+-- WHERE price_num IS NOT NULL AND rating_num IS NOT NULL AND rc IS NOT NULL
+-- ORDER BY price_num ASC
+-- LIMIT 10;
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id, product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS price_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING),           r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING),     r'[^0-9]',  '') AS INT64)   AS rc
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT
+--   product_id,
+--   product_name,
+--   rating_num AS rating,
+--   rc AS rating_count,
+--   price_num AS discounted_price
+-- FROM cleaned
+-- WHERE price_num <= 1000      
+--   AND rating_num >= 4.2      
+--   AND rc >= 50               
+-- ORDER BY rating DESC, rc DESC, price_num ASC
+-- LIMIT 10;
+
+--##################################################################################################################추천시스템5
+-- "매니아층 확실한" 리뷰는 적지만 평점은 만점에 가까운 상품을 알아보자
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id,
+--     product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating          AS STRING), r'[^0-9.]', '') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count    AS STRING), r'[^0-9]',  '') AS INT64  ) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]', '') AS FLOAT64) AS price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT *
+-- FROM cleaned
+-- WHERE rating_num IS NOT NULL AND rc IS NOT NULL
+-- ORDER BY rating_num DESC
+-- LIMIT 20;
+
+-- WITH cleaned AS (
+--   SELECT
+--     product_id, product_name,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating AS STRING),        r'[^0-9.]','') AS FLOAT64) AS rating_num,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(rating_count AS STRING),  r'[^0-9]', '') AS INT64  ) AS rc,
+--     SAFE_CAST(REGEXP_REPLACE(CAST(discounted_price AS STRING), r'[^0-9.]','') AS FLOAT64) AS price_num
+--   FROM `zippy-genre-470802-a3.sqlproject.amazonproject`
+-- )
+-- SELECT
+--   product_id,
+--   product_name,
+--   rating_num AS rating,
+--   rc         AS rating_count,
+--   price_num  AS discounted_price
+-- FROM cleaned
+-- WHERE rating_num >= 4.8
+--   AND rc BETWEEN 5 AND 50
+-- ORDER BY rating DESC, rc ASC, discounted_price ASC
+-- LIMIT 10;
